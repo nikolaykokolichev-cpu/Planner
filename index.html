@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Планер</title>
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Планер">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="title">
+      <h1 id="viewTitle">Днес</h1>
+      <span id="viewSub" class="sub"></span>
+    </div>
+    <div class="actions">
+      <span id="syncPill" class="pill">Локално</span>
+      <button id="btnBell" class="icon" title="Напомняния" aria-label="Напомняния">🔔</button>
+      <button id="btnOut" class="icon" title="Изход" aria-label="Изход" hidden>⎋</button>
+    </div>
+  </header>
+
+  <div class="toolbar" id="toolbar">
+    <input id="search" type="search" placeholder="Търсене…" autocomplete="off">
+    <div id="catFilter" class="chips"></div>
+  </div>
+
+  <main id="main"></main>
+
+  <button id="fab" class="fab" aria-label="Нова задача">+</button>
+
+  <nav class="tabs">
+    <button data-view="today" class="active"><span>☀︎</span>Днес</button>
+    <button data-view="cal"><span>▦</span>Календар</button>
+    <button data-view="all"><span>☰</span>Всички</button>
+  </nav>
+
+  <dialog id="dlg">
+    <form id="form" method="dialog">
+      <h2 id="dlgTitle">Нова задача</h2>
+      <label>Заглавие
+        <input id="fTitle" required maxlength="200" placeholder="Какво трябва да се направи?">
+      </label>
+      <div class="row">
+        <label>Дата <input id="fDate" type="date"></label>
+        <label>Час <input id="fTime" type="time"></label>
+      </div>
+      <div class="row">
+        <label>Категория <select id="fCat"></select></label>
+        <label>Приоритет
+          <select id="fPrio">
+            <option value="1">Висок</option>
+            <option value="2" selected>Среден</option>
+            <option value="3">Нисък</option>
+          </select>
+        </label>
+      </div>
+      <label>Повтаряне
+        <select id="fRepeat">
+          <option value="">Без повтаряне</option>
+          <option value="daily">Всеки ден</option>
+          <option value="weekly">Всяка седмица</option>
+          <option value="monthly">Всеки месец</option>
+        </select>
+      </label>
+      <label>Бележки <textarea id="fNotes" rows="3"></textarea></label>
+      <div class="btns">
+        <button type="button" id="btnDel" class="danger" hidden>Изтрий</button>
+        <span class="grow"></span>
+        <button type="button" id="btnCancel">Отказ</button>
+        <button type="submit" class="primary">Запази</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="login" class="login" hidden>
+    <div class="card">
+      <img src="icons/icon-192.png" alt="" width="72" height="72">
+      <h2>Планер</h2>
+      <p>Влез, за да се синхронизират задачите ти между Mac, Windows и iPhone.</p>
+      <button id="btnGoogle" class="primary">Вход с Google</button>
+      <button id="btnLocal" class="link">Използвай само на това устройство</button>
+      <p id="loginErr" class="err"></p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
