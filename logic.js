@@ -116,3 +116,19 @@ export function dueTimestamp(t) {
   const [hh, mm] = t.time.split(':').map(Number);
   return new Date(y, m - 1, d, hh, mm).getTime();
 }
+
+// Запис за изпълнение на повтаряща се задача: затворено копие, за да се брои в КПД и историята.
+export function completionCopy(t, today) {
+  return makeTask({ ...t, id: newId(), repeat: '', done: true, doneAt: today, created: Date.now() });
+}
+
+// КПД за деня: планирани = всичко, което е за днес или просрочено и още отворено,
+// плюс всичко, изпълнено днес (дори ако е било планирано за друг ден).
+export function dayStats(list, today) {
+  const doneToday = list.filter(t => t.done && t.doneAt === today).length;
+  const openDue = list.filter(t => !t.done && t.date && t.date <= today);
+  const late = openDue.filter(t => t.date < today).length;
+  const planned = doneToday + openDue.length;
+  const pct = planned ? Math.round((doneToday / planned) * 100) : null;
+  return { planned, done: doneToday, left: openDue.length, late, pct };
+}

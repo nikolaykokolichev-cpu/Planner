@@ -1,7 +1,7 @@
 import { firebaseConfig } from './firebase-config.js';
 import {
   CATS, PRIO, REPEAT, iso, parseDate, addDays, makeTask, toggleTask, sortTasks,
-  filterTasks, groupTasks, monthGrid, dueTimestamp
+  filterTasks, groupTasks, monthGrid, dueTimestamp, dayStats, completionCopy
 } from './logic.js';
 
 const $ = s => document.querySelector(s);
@@ -188,8 +188,22 @@ function renderCal(today) {
   return h;
 }
 
+function renderKpi(today) {
+  const st = dayStats(tasks, today);
+  const tone = st.pct === null ? 'none' : st.pct >= 80 ? 'good' : st.pct >= 50 ? 'mid' : 'low';
+  const box = $('#kpi');
+  box.dataset.tone = tone;
+  $('#kpiNum').textContent = st.pct === null ? '—' : `${st.done}/${st.planned} · ${st.pct}%`;
+  $('#kpiFill').style.width = (st.pct ?? 0) + '%';
+  $('#kpiBar').setAttribute('aria-valuenow', String(st.pct ?? 0));
+  $('#kpiSub').textContent = st.pct === null ? 'Няма планирани задачи за днес'
+    : st.pct === 100 ? 'Всичко за днес е изпълнено 🎉'
+    : `Остават ${st.left}` + (st.late ? ` · от тях ${st.late} просрочени` : '');
+}
+
 function render() {
   const today = todayStr();
+  renderKpi(today);
   $('#viewTitle').textContent = { today: 'Днес', cal: 'Календар', all: 'Всички задачи' }[view];
   $('#main').innerHTML = view === 'today' ? renderToday(today) : view === 'cal' ? renderCal(today) : renderAll(today);
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
@@ -256,8 +270,10 @@ $('#main').addEventListener('click', e => {
   const t = tasks.find(x => x.id === li.dataset.id);
   if (!t) return;
   if (e.target.closest('.chk')) {
-    const upd = toggleTask(t, todayStr());
+    const today = todayStr();
+    const upd = toggleTask(t, today);
     store.save(upd);
+    if (t.repeat && !t.done) store.save(completionCopy(t, today)); // остава в историята и в КПД
     if (t.repeat && !t.done) toast(`Следващо повторение: ${upd.date.split('-').reverse().join('.')}`);
   } else openEditor(t.id);
 });

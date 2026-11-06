@@ -140,3 +140,15 @@ label input, label select, label textarea {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(150px + var(--safe-b));
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 60;
 }
+
+/* КПД лента */
+.kpi { max-width: 760px; margin: 0 auto; padding: 2px 20px 6px; --tone: var(--muted); }
+.kpi[data-tone="good"] { --tone: var(--ok); }
+.kpi[data-tone="mid"]  { --tone: #d97706; }
+.kpi[data-tone="low"]  { --tone: var(--danger); }
+.kpi-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.kpi-label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.kpi-num { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--tone); }
+.bar { height: 10px; border-radius: 99px; background: var(--surface2); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--tone); transition: width .5s ease, background .3s; }
+.kpi-sub { margin-top: 5px; font-size: 12.5px; color: var(--muted); min-height: 1.2em; }

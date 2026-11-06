@@ -27,6 +27,12 @@
     </div>
   </header>
 
+  <section class="kpi" id="kpi" aria-live="polite">
+    <div class="kpi-top"><span class="kpi-label">КПД днес</span><span id="kpiNum" class="kpi-num"></span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="kpiBar"><i id="kpiFill"></i></div>
+    <div id="kpiSub" class="kpi-sub"></div>
+  </section>
+
   <div class="toolbar" id="toolbar">
     <input id="search" type="search" placeholder="Търсене…" autocomplete="off">
     <div id="catFilter" class="chips"></div>
