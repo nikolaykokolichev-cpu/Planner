@@ -17,11 +17,13 @@
 <body>
   <header class="top">
     <div class="title">
+      <button id="tagline" class="tagline" type="button">Направи 1% повече днес</button>
       <h1 id="viewTitle">Днес</h1>
       <span id="viewSub" class="sub"></span>
     </div>
     <div class="actions">
       <span id="syncPill" class="pill">Локално</span>
+      <button id="btnRecap" class="icon" title="Вечерна рекапитулация" aria-label="Вечерна рекапитулация">🌙</button>
       <button id="btnBell" class="icon" title="Напомняния" aria-label="Напомняния">🔔</button>
       <button id="btnOut" class="icon" title="Изход" aria-label="Изход" hidden>⎋</button>
     </div>
@@ -40,14 +42,23 @@
 
   <main id="main"></main>
 
+  <div id="focusBar" class="focusbar" hidden>
+    <span id="fbIcon" class="fb-icon">🍅</span>
+    <div class="fb-main"><b id="fbTime">25:00</b><small id="fbTask"></small></div>
+    <button id="fbSkip" type="button" aria-label="Пропусни почивката" hidden>⏭</button>
+    <button id="fbStop" type="button" aria-label="Спри">■</button>
+  </div>
+
   <button id="fab" class="fab" aria-label="Нова задача">+</button>
 
   <nav class="tabs">
     <button data-view="today" class="active"><span>☀︎</span>Днес</button>
     <button data-view="cal"><span>▦</span>Календар</button>
     <button data-view="all"><span>☰</span>Всички</button>
+    <button data-view="habits"><span>◎</span>Навици</button>
   </nav>
 
+  <!-- Редакция на задача -->
   <dialog id="dlg">
     <form id="form" method="dialog">
       <h2 id="dlgTitle">Нова задача</h2>
@@ -84,6 +95,45 @@
         <button type="submit" class="primary">Запази</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Избор на Топ 3 за днес -->
+  <dialog id="dlgPick">
+    <div class="sheet">
+      <h2>☀︎ Топ 3 за днес</h2>
+      <p class="hint">Избери до 3 задачи, които правят деня успешен. Останалите са бонус.</p>
+      <div id="pickList"></div>
+      <div class="btns">
+        <button type="button" id="pickCancel">Отказ</button>
+        <span class="grow"></span>
+        <button type="button" class="primary" id="pickSave">Запази</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Фокус сесия -->
+  <dialog id="dlgFocus">
+    <form id="focusForm" method="dialog">
+      <h2>🍅 Фокус сесия</h2>
+      <label>Задача
+        <select id="fTask"></select>
+      </label>
+      <div class="row">
+        <label>Работа (мин) <input id="fWork" type="number" min="1" max="180" inputmode="numeric"></label>
+        <label>Почивка (мин) <input id="fBreak" type="number" min="1" max="60" inputmode="numeric"></label>
+      </div>
+      <p class="hint">Изключи известията и работи само по една задача. Всяка 4-та сесия за деня е с дълга почивка.</p>
+      <div class="btns">
+        <span class="grow"></span>
+        <button type="button" id="focusCancel">Отказ</button>
+        <button type="submit" class="primary">Старт</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Вечерна рекапитулация -->
+  <dialog id="dlgRecap">
+    <div class="sheet" id="rcBody"></div>
   </dialog>
 
   <div id="login" class="login" hidden>

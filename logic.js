@@ -48,6 +48,9 @@ export function makeTask(p = {}) {
     repeat: ['daily', 'weekly', 'monthly'].includes(p.repeat) ? p.repeat : '',
     done: !!p.done,
     doneAt: p.doneAt || '',
+    top: p.top || '',
+    pomos: Number(p.pomos) || 0,
+    focusMin: Number(p.focusMin) || 0,
     created: p.created || Date.now()
   };
 }
@@ -55,7 +58,7 @@ export function makeTask(p = {}) {
 // Маркира като изпълнена или за повтаряща се задача — прехвърля към следващата дата.
 export function toggleTask(t, today) {
   if (!t.done && t.repeat) {
-    return { ...t, date: nextDate(t.date, t.repeat, today) };
+    return { ...t, date: nextDate(t.date, t.repeat, today), top: '', pomos: 0, focusMin: 0 };
   }
   return { ...t, done: !t.done, doneAt: !t.done ? today : '' };
 }
@@ -131,4 +134,84 @@ export function dayStats(list, today) {
   const planned = doneToday + openDue.length;
   const pct = planned ? Math.round((doneToday / planned) * 100) : null;
   return { planned, done: doneToday, left: openDue.length, late, pct };
+}
+
+/* ---------- Настройки ---------- */
+export const DEFAULT_SETTINGS = { reviewTime: '21:00', pomoWork: 25, pomoBreak: 5, pomoLong: 15 };
+const clamp = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+export function normalizeSettings(s) {
+  s = s || {};
+  return {
+    reviewTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(s.reviewTime || '') ? s.reviewTime : DEFAULT_SETTINGS.reviewTime,
+    pomoWork: clamp(s.pomoWork, 1, 180, DEFAULT_SETTINGS.pomoWork),
+    pomoBreak: clamp(s.pomoBreak, 1, 60, DEFAULT_SETTINGS.pomoBreak),
+    pomoLong: clamp(s.pomoLong, 1, 90, DEFAULT_SETTINGS.pomoLong)
+  };
+}
+
+/* ---------- Топ 3 приоритета ---------- */
+// Връща само променените задачи: избраните получават top=day, а махнатите го губят.
+export function applyTop(list, ids, day) {
+  const set = new Set(ids);
+  const changed = [];
+  for (const t of list) {
+    const want = set.has(t.id);
+    if (want && t.top !== day) changed.push({ ...t, top: day });
+    else if (!want && t.top === day) changed.push({ ...t, top: '' });
+  }
+  return changed;
+}
+export function topStats(list, day) {
+  const tt = list.filter(t => t.top === day);
+  return { total: tt.length, done: tt.filter(t => t.done).length };
+}
+
+/* ---------- Навици ---------- */
+export function makeHabit(p = {}) {
+  return {
+    id: p.id || newId(),
+    name: (p.name || '').trim().slice(0, 60),
+    days: Array.isArray(p.days) ? [...new Set(p.days)].sort() : [],
+    created: p.created || Date.now(),
+    archived: !!p.archived
+  };
+}
+export function toggleHabitDay(h, day) {
+  const days = h.days.includes(day) ? h.days.filter(d => d !== day) : [...h.days, day].sort();
+  return { ...h, days: days.slice(-400) };
+}
+// Последните 7 дни (до днес включително) и колко от тях са изпълнени. Без серии, без наказания.
+export function habitWeek(h, today) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) { const d = addDays(today, -i); days.push({ date: d, done: h.days.includes(d) }); }
+  return { days, count: days.filter(x => x.done).length };
+}
+
+/* ---------- Фокус (Помодоро) ---------- */
+export function focusToday(log, day) {
+  const x = log.filter(s => s.day === day);
+  return { sessions: x.length, min: x.reduce((a, s) => a + (Number(s.min) || 0), 0) };
+}
+// Всяка 4-та сесия за деня е с дълга почивка.
+export function breakMinutes(n, s) { return n > 0 && n % 4 === 0 ? s.pomoLong : s.pomoBreak; }
+
+/* ---------- Една подсказка наведнъж ---------- */
+export function pickNudge({ today, hhmm, tasks, reviews, settings, dismissed = [], focusing = false }) {
+  if (focusing) return null;
+  const ok = id => !dismissed.includes(id);
+  const reviewed = reviews.some(r => r.id === today);
+  const openDue = tasks.filter(t => !t.done && t.date && t.date <= today);
+  const late = openDue.filter(t => t.date < today).length;
+  const topToday = tasks.filter(t => t.top === today).length;
+  const candidates = tasks.some(t => !t.done && (!t.date || t.date <= today));
+  if (!reviewed && hhmm >= settings.reviewTime && ok('recap'))
+    return { id: 'recap', icon: '🌙', action: 'recap', label: 'Започни',
+      text: 'Време е за вечерна рекапитулация: 10 минути да затвориш деня и да подредиш утрешния.' };
+  if (hhmm < '14:00' && topToday === 0 && candidates && ok('top'))
+    return { id: 'top', icon: '☀︎', action: 'top', label: 'Избери',
+      text: 'Избери 3-те най-важни задачи за днес. Всичко останало е бонус.' };
+  if (late >= 3 && ok('late'))
+    return { id: 'late', icon: '⚠︎', action: 'recap', label: 'Подреди',
+      text: `${late} просрочени задачи. Реши за всяка: утре или я махни.` };
+  return null;
 }
