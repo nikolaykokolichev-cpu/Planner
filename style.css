@@ -265,3 +265,9 @@ dialog { max-height: 92vh; overflow: auto; }
 #tagline { white-space: nowrap; letter-spacing: .02em; font-size: 12.5px; }
 body:has(#focusBar:not([hidden])) .fab { bottom: calc(146px + var(--safe-b)); }
 .pick-list .t { font-size: 15px; color: var(--text); }
+
+/* Аспазия и мост */
+.meta .moved { font-variant-numeric: tabular-nums; opacity: .75; }
+.keyrow { display: flex; gap: 8px; margin-bottom: 10px; }
+.keyrow input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.keyrow button { padding: 10px 14px; border-radius: 10px; flex: none; }

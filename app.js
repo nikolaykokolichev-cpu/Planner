@@ -1,9 +1,10 @@
 import {
   CATS, REPEAT, iso, parseDate, addDays, makeTask, toggleTask, sortTasks, filterTasks, groupTasks,
   monthGrid, dueTimestamp, dayStats, completionCopy, makeHabit, toggleHabitDay, habitWeek, applyTop,
-  topStats, focusToday, breakMinutes, pickNudge, normalizeSettings, DEFAULT_SETTINGS, newId
+  topStats, focusToday, breakMinutes, pickNudge, normalizeSettings, DEFAULT_SETTINGS, newId,
+  rollAspasia, isBridgeKey, makeBridgeKey, sanitizeBridgeOp, applyBridgeOp, sortInbox, diffStatus
 } from './logic.js';
-import { COLLS, cfgOk, fbRefs, initFirebase, localStore, cloudStore } from './store.js';
+import { COLLS, cfgOk, fbRefs, initFirebase, localStore, cloudStore, cloudBridge } from './store.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -26,23 +27,123 @@ let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let filterCat = '';
 let query = '';
 let editingId = null;
+// Синхронизация: задачите/настройките са „потвърдени", когато са дошли от сървъра (не само от кеша).
+// Дотогава не прехвърляме и не прилагаме операции, за да не презапишем по-нова версия от друго устройство.
+let synced = { tasks: false, settings: false };
+let lastRollDay = '';
+let bridgeKey = '', bridge = null, keyMaking = false;
+let inboxDocs = [], statusDocs = null;
+const handledInbox = new Set();
+const statusSent = new Map();
 
 const norm = {
   tasks: l => { tasks = l.map(makeTask); },
   habits: l => { habits = l.map(makeHabit).filter(h => !h.archived && h.name); },
   reviews: l => { reviews = l; },
   focus: l => { focusLog = l; },
-  settings: l => { settings = normalizeSettings(l.find(x => x.id === 'main')); }
+  settings: l => {
+    settings = normalizeSettings(l.find(x => x.id === 'main'));
+    const k = l.find(x => x.id === 'bridge')?.key;
+    bridgeKey = isBridgeKey(k) ? k : '';
+  }
 };
 
 function useStore(s) {
   store?.stop();
+  stopBridge();
   store = s;
-  for (const c of COLLS) s.subscribe(c, list => { norm[c](list); render(); });
+  synced = { tasks: false, settings: false };
+  lastRollDay = ''; bridgeKey = ''; keyMaking = false;
+  for (const c of COLLS) s.subscribe(c, (list, meta) => {
+    norm[c](list);
+    if (c in synced && !meta?.fromCache) synced[c] = true;
+    afterData();
+    render();
+  });
   const cloud = s.mode === 'cloud';
   $('#syncPill').textContent = cloud ? 'Синхронизирано' : 'Локално';
   $('#syncPill').classList.toggle('on', cloud);
   $('#btnOut').hidden = !cloud;
+}
+
+/* ---------- Аспазия: прехвърляне към днес ---------- */
+// При отваряне (първите потвърдени данни) и при смяна на деня.
+function rollover() {
+  const today = todayStr();
+  if (!store || !synced.tasks || lastRollDay === today) return;
+  lastRollDay = today;
+  const moved = rollAspasia(tasks, today);
+  moved.forEach(t => store.save('tasks', t));
+  if (moved.length) toast(`Аспазия: ${moved.length} ${moved.length === 1 ? 'задача е прехвърлена' : 'задачи са прехвърлени'} за днес`);
+}
+
+/* ---------- Мост за външен асистент ---------- */
+function afterData() {
+  rollover();
+  if (store?.mode !== 'cloud') return;
+  ensureBridgeKey();
+  if (bridgeKey && bridge?.key !== bridgeKey) startBridge(bridgeKey);
+  processInbox();
+  syncStatus();
+}
+
+// Ключът се създава веднъж — само ако сървърът потвърди, че още няма такъв.
+function ensureBridgeKey() {
+  if (bridgeKey || keyMaking || !synced.settings) return;
+  keyMaking = true;
+  const key = makeBridgeKey(crypto.getRandomValues(new Uint8Array(32)));
+  bridgeKey = key;
+  store.save('settings', { id: 'bridge', key, created: Date.now() });
+}
+
+function startBridge(key) {
+  stopBridge();
+  bridge = cloudBridge(key, err => toast('Мост: ' + (err.code || err.message)));
+  bridge.onInbox(list => { inboxDocs = list; processInbox(); });
+  bridge.onStatus((list, meta) => { if (!meta.fromCache) statusDocs = list; syncStatus(); });
+}
+function stopBridge() {
+  bridge?.stop();
+  bridge = null; inboxDocs = []; statusDocs = null; statusSent.clear();
+}
+
+function upsertLocal(t) {
+  const i = tasks.findIndex(x => x.id === t.id);
+  i >= 0 ? (tasks[i] = t) : tasks.push(t);
+}
+
+function processInbox() {
+  if (!bridge || !synced.tasks || !inboxDocs.length) return;
+  const today = todayStr();
+  let applied = 0;
+  for (const doc of sortInbox(inboxDocs)) {
+    if (handledInbox.has(doc.id)) continue;
+    handledInbox.add(doc.id);
+    const v = sanitizeBridgeOp(doc);
+    if (v.ok) {
+      const r = applyBridgeOp(tasks.find(t => t.id === v.op.taskId), v.op, today);
+      r.save.forEach(t => { store.save('tasks', t); upsertLocal(t); notified.delete(t.id); });
+      if (r.remove) { store.remove('tasks', r.remove); tasks = tasks.filter(t => t.id !== r.remove); }
+      if (r.save.length || r.remove) applied++;
+    } else console.warn('Мост: отхвърлена операция', doc.id, v.reason);
+    bridge.ack(doc.id);
+  }
+  if (applied) { toast(`Аспазия: ${applied} ${applied === 1 ? 'промяна' : 'промени'} от асистента`); render(); }
+}
+
+function syncStatus() {
+  if (!bridge || !synced.tasks || !statusDocs) return;
+  const { writes, deletes } = diffStatus(tasks, statusDocs, new Date().toISOString());
+  // statusSent пази последно изпратеното, докато сървърът го потвърди — без повторни записи.
+  for (const w of writes) {
+    const { updated, ...sig } = w.data, key = JSON.stringify(sig);
+    if (statusSent.get(w.id) === key) continue;
+    statusSent.set(w.id, key); bridge.setStatus(w.id, w.data);
+  }
+  for (const id of deletes) {
+    if (statusSent.get(id) === null) continue;
+    statusSent.set(id, null); bridge.removeStatus(id);
+  }
 }
 
 /* ---------- Вход ---------- */
@@ -96,6 +197,7 @@ function meta(t, today) {
   if (t.prio === 1) parts.push('<span>▲ висок</span>');
   if (t.repeat) parts.push(`<span>↻ ${REPEAT[t.repeat]}</span>`);
   if (t.pomos) parts.push(`<span>🍅 ${t.pomos}</span>`);
+  if (t.moved) parts.push(`<span class="moved" title="Прехвърляна ${t.moved} ${t.moved === 1 ? 'път' : 'пъти'}">⇢${t.moved}</span>`);
   if (t.notes) parts.push('<span>✎</span>');
   return parts.join('');
 }
@@ -213,7 +315,14 @@ function renderHabits(today) {
       <label>Работа (мин) <input type="number" inputmode="numeric" min="1" max="180" data-set="pomoWork" value="${settings.pomoWork}"></label>
       <label>Почивка (мин) <input type="number" inputmode="numeric" min="1" max="60" data-set="pomoBreak" value="${settings.pomoBreak}"></label>
       <label>Дълга почивка (мин) <input type="number" inputmode="numeric" min="1" max="90" data-set="pomoLong" value="${settings.pomoLong}"></label>
-    </div>`;
+    </div>
+    <h3 class="group">Мост за асистент</h3>
+    ${store?.mode === 'cloud'
+      ? (bridgeKey
+        ? `<p class="hint">Таен ключ, с който външният асистент добавя и отмята задачи „Аспазия". Не го споделяй с никого другиго.</p>
+           <div class="keyrow"><input id="bridgeKey" readonly value="${esc(bridgeKey)}" aria-label="Ключ за моста"><button type="button" class="primary" data-copykey>Копирай</button></div>`
+        : '<p class="hint">Ключът се създава…</p>')
+      : '<p class="hint">Мостът работи само при вход с Google (синхронизиран режим).</p>'}`;
   return h;
 }
 
@@ -509,6 +618,7 @@ $('#main').addEventListener('click', e => {
   const ds = e.target.closest('[data-dismiss]');
   if (ds) { dismiss(ds.dataset.dismiss); render(); return; }
   if (e.target.closest('[data-focus]')) { openFocus(); return; }
+  if (e.target.closest('[data-copykey]')) { copyKey(); return; }
   const hb = e.target.closest('[data-habit]');
   if (hb) {
     const h = habits.find(x => x.id === hb.dataset.habit);
@@ -583,6 +693,11 @@ document.addEventListener('keydown', e => {
   }
 });
 
+async function copyKey() {
+  try { await navigator.clipboard.writeText(bridgeKey); toast('Ключът е копиран'); }
+  catch { const i = $('#bridgeKey'); i?.select(); toast('Избран е — копирай ръчно'); }
+}
+
 /* ---------- Известия за задачи с час ---------- */
 const notified = new Set();
 function toast(msg) {
@@ -614,8 +729,9 @@ async function checkReminders() {
 }
 setInterval(checkReminders, 30000);
 // Подсказките зависят от часа: обновяваме на всяка минута, ако няма отворен диалог.
-setInterval(() => { if (![...document.querySelectorAll('dialog')].some(d => d.open)) render(); }, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); tickFocus(); checkReminders(); } });
+// Проверката за нов ден (прехвърляне на „Аспазия") върви независимо от диалозите.
+setInterval(() => { rollover(); if (![...document.querySelectorAll('dialog')].some(d => d.open)) render(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { rollover(); render(); tickFocus(); checkReminders(); } });
 
 /* ---------- Старт ---------- */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -5,6 +5,7 @@ export const CATS = {
   kids:     { name: 'Деца',     color: '#f59e0b' },
   money:    { name: 'Финанси',  color: '#10b981' },
   personal: { name: 'Лично',    color: '#a855f7' },
+  aspasia:  { name: 'Аспазия',  color: '#ec4899' },
   other:    { name: 'Други',    color: '#94a3b8' }
 };
 export const PRIO = { 1: 'Висок', 2: 'Среден', 3: 'Нисък' };
@@ -51,6 +52,7 @@ export function makeTask(p = {}) {
     top: p.top || '',
     pomos: Number(p.pomos) || 0,
     focusMin: Number(p.focusMin) || 0,
+    moved: Math.max(0, Math.floor(Number(p.moved) || 0)),
     created: p.created || Date.now()
   };
 }
@@ -214,4 +216,118 @@ export function pickNudge({ today, hhmm, tasks, reviews, settings, dismissed = [
     return { id: 'late', icon: '⚠︎', action: 'recap', label: 'Подреди',
       text: `${late} просрочени задачи. Реши за всяка: утре или я махни.` };
   return null;
+}
+
+/* ---------- Аспазия: автоматично прехвърляне ---------- */
+// Отворените, неповтарящи се задачи „Аспазия" с минала дата отиват на днес; moved брои прехвърлянията.
+export function rollAspasia(list, today) {
+  return list
+    .filter(t => t.cat === 'aspasia' && !t.done && !t.repeat && t.date && t.date < today)
+    .map(t => ({ ...t, date: today, moved: (Number(t.moved) || 0) + 1 }));
+}
+
+/* ---------- Мост за външен асистент ---------- */
+export const BRIDGE_OPS = ['add', 'update', 'done', 'undone', 'delete'];
+export const BRIDGE_LIMITS = { title: 200, notes: 2000 };
+const KEY_RE = /^[A-Za-z0-9_-]{32,128}$/;
+const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export const isBridgeKey = k => typeof k === 'string' && KEY_RE.test(k);
+
+// 32 случайни байта -> 43 знака base64url (256 бита ентропия).
+export function makeBridgeKey(bytes) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let bits = 0, acc = 0, out = '';
+  for (const b of bytes) {
+    acc = (acc << 8) | b; bits += 8;
+    while (bits >= 6) { bits -= 6; out += A[(acc >> bits) & 63]; }
+    acc &= (1 << bits) - 1;
+  }
+  if (bits) out += A[(acc << (6 - bits)) & 63];
+  return out;
+}
+
+// Проверява входящ документ. Връща { ok: true, op } с изчистени полета или { ok: false, reason }.
+export function sanitizeBridgeOp(raw) {
+  const r = raw || {};
+  if (!BRIDGE_OPS.includes(r.op)) return { ok: false, reason: 'op' };
+  if (typeof r.taskId !== 'string' || !ID_RE.test(r.taskId)) return { ok: false, reason: 'taskId' };
+  const op = { op: r.op, taskId: r.taskId, at: typeof r.at === 'string' ? r.at.slice(0, 40) : '' };
+  const str = (k, max) => {
+    if (r[k] === undefined || r[k] === null) return true;
+    if (typeof r[k] !== 'string' || r[k].length > max) return false;
+    op[k] = r[k]; return true;
+  };
+  if (!str('title', BRIDGE_LIMITS.title) || !str('notes', BRIDGE_LIMITS.notes)) return { ok: false, reason: 'text' };
+  if (r.date !== undefined && r.date !== null) {
+    if (r.date !== '' && !(typeof r.date === 'string' && DATE_RE.test(r.date))) return { ok: false, reason: 'date' };
+    op.date = r.date;
+  }
+  if (r.time !== undefined && r.time !== null) {
+    if (r.time !== '' && !(typeof r.time === 'string' && TIME_RE.test(r.time))) return { ok: false, reason: 'time' };
+    op.time = r.time;
+  }
+  if (r.cat !== undefined && r.cat !== null) {
+    if (!CATS[r.cat]) return { ok: false, reason: 'cat' };
+    op.cat = r.cat;
+  }
+  if (r.prio !== undefined && r.prio !== null) {
+    if (![1, 2, 3].includes(r.prio)) return { ok: false, reason: 'prio' };
+    op.prio = r.prio;
+  }
+  if (op.op === 'add' && !(op.title || '').trim()) return { ok: false, reason: 'title' };
+  return { ok: true, op };
+}
+
+const FIELDS = ['title', 'notes', 'date', 'time', 'cat', 'prio'];
+// Прилага операция върху текущата задача (или undefined). Идемпотентно: повторно получена
+// операция дава същия резултат, без дублиране. Връща { save: [задачи], remove: id|null }.
+export function applyBridgeOp(existing, op, today) {
+  const patch = {};
+  for (const k of FIELDS) if (op[k] !== undefined) patch[k] = op[k];
+  if (op.op === 'add' || op.op === 'update') {
+    if (!existing) {
+      if (op.op === 'update') return { save: [], remove: null };   // няма какво да се обнови
+      return { save: [makeTask({ cat: 'aspasia', date: today, ...patch, id: op.taskId })], remove: null };
+    }
+    const t = makeTask({ ...existing, ...patch, id: existing.id });
+    if (patch.title !== undefined && !t.title) return { save: [], remove: null };
+    return { save: [t], remove: null };
+  }
+  if (op.op === 'delete') return { save: [], remove: existing ? existing.id : null };
+  if (!existing) return { save: [], remove: null };
+  if (op.op === 'done') {
+    if (existing.done) return { save: [], remove: null };
+    if (existing.repeat) return { save: [toggleTask(existing, today), completionCopy(existing, today)], remove: null };
+    return { save: [{ ...existing, done: true, doneAt: today }], remove: null };
+  }
+  // undone
+  if (!existing.done) return { save: [], remove: null };
+  return { save: [{ ...existing, done: false, doneAt: '' }], remove: null };
+}
+
+// Входящите се обработват по реда на изпращане (at), после по id.
+export const sortInbox = docs => [...docs].sort((a, b) =>
+  String(a.at || '').localeCompare(String(b.at || '')) || String(a.id).localeCompare(String(b.id)));
+
+/* ---------- Огледален статус ---------- */
+export function statusDoc(t) {
+  return { title: t.title, date: t.date || '', time: t.time || '', done: !!t.done, doneAt: t.doneAt || '', moved: Number(t.moved) || 0 };
+}
+const sameStatus = (a, b) => ['title', 'date', 'time', 'done', 'doneAt', 'moved'].every(k => a[k] === b[k]);
+
+// Сравнява задачите „Аспазия" със записаното в status. Връща какво да се запише и какво да се изтрие.
+export function diffStatus(tasks, statusDocs, nowIso) {
+  const have = new Map(statusDocs.map(d => [d.id, d]));
+  const writes = [], want = new Set();
+  for (const t of tasks) {
+    if (t.cat !== 'aspasia') continue;
+    want.add(t.id);
+    const s = statusDoc(t), cur = have.get(t.id);
+    if (!cur || !sameStatus(s, { ...cur, moved: Number(cur.moved) || 0 })) writes.push({ id: t.id, data: { ...s, updated: nowIso } });
+  }
+  const deletes = statusDocs.filter(d => !want.has(d.id)).map(d => d.id);
+  return { writes, deletes };
 }

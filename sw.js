@@ -1,4 +1,4 @@
-const VERSION = 'planner-v4';
+const VERSION = 'planner-v5';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './logic.js', './store.js', './firebase-config.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png'
