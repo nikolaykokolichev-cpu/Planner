@@ -16,10 +16,11 @@ const MONTHS = ['януари', 'февруари', 'март', 'април', '�
 const DOW = ['пон', 'вто', 'сря', 'чет', 'пет', 'съб', 'нед'];
 const DOW2 = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const DOW_LONG = ['неделя', 'понеделник', 'вторник', 'сряда', 'четвъртък', 'петък', 'събота'];
-const TITLES = { today: 'Днес', cal: 'Календар', all: 'Всички', habits: 'Навици' };
+const TITLES = { today: 'Днес', cal: 'Календар', all: 'Всички', habits: 'Навици', trips: 'Пътен лист' };
 
 /* ---------- Състояние ---------- */
-let tasks = [], habits = [], reviews = [], focusLog = [], settings = { ...DEFAULT_SETTINGS };
+let tasks = [], habits = [], reviews = [], focusLog = [], trips = [], settings = { ...DEFAULT_SETTINGS };
+let tripWeek = mondayOf(todayStr()), tripSel = todayStr();
 let store = null;
 let view = 'today';
 let selDay = todayStr();
@@ -36,11 +37,16 @@ let inboxDocs = [], statusDocs = null;
 const handledInbox = new Set();
 const statusSent = new Map();
 
+function mondayOf(s) { const d = parseDate(s); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
+const fmtKm = n => (n == null || n === '' ? '' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '));
+const shortD = s => { const d = parseDate(s); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`; };
+
 const norm = {
   tasks: l => { tasks = l.map(makeTask); },
   habits: l => { habits = l.map(makeHabit).filter(h => !h.archived && h.name); },
   reviews: l => { reviews = l; },
   focus: l => { focusLog = l; },
+  trips: l => { trips = l.filter(x => x.date); },
   settings: l => {
     settings = normalizeSettings(l.find(x => x.id === 'main'));
     const k = l.find(x => x.id === 'bridge')?.key;
@@ -274,23 +280,65 @@ function renderCal(today) {
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   const vis = filterTasks(tasks, { cat: filterCat, query });
   const byDay = {};
-  vis.filter(t => t.date && !t.done).forEach(t => (byDay[t.date] ||= []).push(t));
+  vis.filter(t => t.date).forEach(t => (byDay[t.date] ||= []).push(t));
   let h = `<div class="calhead"><button data-nav="-1" aria-label="Предишен">‹</button>
     <strong>${MONTHS[m]} ${y}</strong><button data-nav="1" aria-label="Следващ">›</button></div>
     <div class="grid">${DOW.map(d => `<div class="dow">${d}</div>`).join('')}`;
   for (const c of monthGrid(y, m)) {
-    const dots = (byDay[c.date] || []).slice(0, 4)
-      .map(t => `<i style="background:${(CATS[t.cat] || CATS.other).color}"></i>`).join('');
+    const list = sortTasks(byDay[c.date] || []);
+    const dots = list.slice(0, 6)
+      .map(t => `<i class="${t.done ? 'dd' : ''}" style="background:${(CATS[t.cat] || CATS.other).color}"></i>`).join('');
+    const titles = list.slice(0, 2).map(t => `<span class="ct ${t.done ? 'done' : ''}">${t.time ? esc(t.time) + ' ' : ''}${esc(t.title)}</span>`).join('')
+      + (list.length > 2 ? `<span class="ct more">+${list.length - 2} още</span>` : '');
     h += `<button class="day ${c.inMonth ? '' : 'out'} ${c.date === today ? 'today' : ''} ${c.date === selDay ? 'sel' : ''}" data-day="${c.date}">
-      ${c.day}<span class="dots">${dots}</span></button>`;
+      <span class="dn">${c.day}</span><span class="dots">${dots}</span>${titles}</button>`;
   }
   h += '</div>';
+  const mp = `${y}-${pad(m + 1)}`;
+  const monthTasks = vis.filter(t => t.date && t.date.startsWith(mp));
+  h += `<p class="hint">${MONTHS[m]}: ${monthTasks.filter(t => !t.done).length} за правене · ${monthTasks.filter(t => t.done).length} готови</p>`;
   const d = parseDate(selDay);
   const dayTasks = sortTasks(vis.filter(t => t.date === selDay));
-  h += `<h3 class="group">${DOW_LONG[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}</h3>`;
+  const dTrip = trips.find(x => x.date === selDay);
+  h += `<h3 class="group">${DOW_LONG[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} · ${dayTasks.filter(t => !t.done).length} за правене · ${dayTasks.filter(t => t.done).length} готови</h3>`;
+  if (dTrip) h += `<p class="hint">Пътен лист: ${esc(dTrip.route || '—')}${dTrip.km_start != null && dTrip.km_end != null ? ' · ' + fmtKm(dTrip.km_end - dTrip.km_start) + ' км' : ''}</p>`;
   h += dayTasks.length ? listHTML(dayTasks, today) : emptyHTML('Няма задачи за този ден.');
   $('#viewSub').textContent = '';
   return h;
+}
+
+function renderTrips(today) {
+  const from = tripWeek, to = addDays(tripWeek, 6);
+  const sorted = [...trips].sort((a, b) => a.date.localeCompare(b.date));
+  const ex = sorted.find(t => t.date === tripSel);
+  const prev = [...sorted].reverse().find(t => t.date < tripSel && t.km_end != null);
+  const v = ex || { km_start: prev ? prev.km_end : '', km_end: '', route: '' };
+  let rows = '', total = 0;
+  for (const t of sorted.filter(x => x.date >= from && x.date <= to)) {
+    const i = sorted.indexOf(t), p = sorted[i - 1];
+    const km = t.km_start != null && t.km_end != null ? t.km_end - t.km_start : null;
+    if (km != null) total += km;
+    const gap = p && p.km_end != null && t.km_start != null && p.km_end !== t.km_start;
+    rows += `<tr data-trip="${t.date}"><td class="l">${shortD(t.date)}</td><td class="l">${esc(t.serves || 'ТО')}</td><td class="l route">${esc(t.route || '—')}</td>
+      <td class="${gap ? 'flag' : ''}">${fmtKm(t.km_start) || '—'}</td><td>${fmtKm(t.km_end) || '—'}</td>
+      <td class="${km != null && km < 0 ? 'flag' : ''}">${km != null ? fmtKm(km) : '—'}</td><td class="l">${esc(t.driver || 'Николай Коколичев')}</td></tr>`;
+  }
+  if (!rows) rows = '<tr><td class="l" colspan="7">Няма записи за тази седмица.</td></tr>';
+  $('#viewSub').textContent = `${shortD(from).slice(0, 5)} – ${shortD(to).slice(0, 5)} · ${fmtKm(total) || 0} км`;
+  const val = x => (x == null ? '' : esc(String(x)));
+  return `<form id="tripForm" class="tripform" autocomplete="off">
+      <label>Дата <input type="date" id="tDate" value="${tripSel}" required></label>
+      <div class="row">
+        <label>Км при тръгване <input type="number" id="tStart" inputmode="numeric" min="0" value="${val(v.km_start)}"></label>
+        <label>Км при връщане <input type="number" id="tEnd" inputmode="numeric" min="0" value="${val(v.km_end)}"></label>
+      </div>
+      <label>Път на движението <input type="text" id="tRoute" maxlength="300" placeholder="Благоевград – Перник – Благоевград" value="${val(v.route)}"></label>
+      <div class="btns"><button type="submit" class="primary">Запази деня</button>${ex ? '<button type="button" class="danger" data-tripdel>Изтрий записа</button>' : ''}</div>
+    </form>
+    <div class="calhead"><button data-tripweek="-7" aria-label="Предишна седмица">‹</button><strong>${shortD(from).slice(0, 5)} – ${shortD(to).slice(0, 5)}</strong><button data-tripweek="7" aria-label="Следваща седмица">›</button></div>
+    <div class="tscroll"><table class="trips"><thead><tr><th class="l">Дата</th><th class="l">Колата обслужва</th><th class="l">Път на движението</th><th>При тръгване</th><th>При връщане</th><th>Изминати км</th><th class="l">Шофьор</th></tr></thead>
+      <tbody>${rows}</tbody><tfoot><tr><td class="l" colspan="5">Общо за седмицата</td><td>${fmtKm(total) || 0}</td><td></td></tr></tfoot></table></div>
+    <p class="hint">Колоните са в реда на хартиената книга. Оцветен начален километраж значи, че не съвпада с края на предишния записан ден.</p>`;
 }
 
 function renderHabits(today) {
@@ -345,14 +393,15 @@ function renderKpi(today) {
 }
 
 function render() {
+  if (view === 'trips' && document.activeElement?.closest?.('#tripForm')) return;
   const today = todayStr();
   renderKpi(today);
   $('#viewTitle').textContent = TITLES[view];
   $('#main').innerHTML = view === 'today' ? renderToday(today) : view === 'cal' ? renderCal(today)
-    : view === 'habits' ? renderHabits(today) : renderAll(today);
+    : view === 'habits' ? renderHabits(today) : view === 'trips' ? renderTrips(today) : renderAll(today);
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  $('#toolbar').hidden = view === 'habits';
-  $('#fab').hidden = view === 'habits';
+  $('#toolbar').hidden = view === 'habits' || view === 'trips';
+  $('#fab').hidden = view === 'habits' || view === 'trips';
   $('#catFilter').innerHTML =
     `<button class="chip ${filterCat ? '' : 'active'}" data-cat="">Всички</button>` +
     Object.entries(CATS).map(([k, c]) =>
@@ -604,6 +653,14 @@ $('#fbSkip').onclick = () => { focus = null; saveFocus(); renderFocusBar(); rend
 
 /* ---------- Събития ---------- */
 $('#main').addEventListener('click', e => {
+  const tw = e.target.closest('[data-tripweek]');
+  if (tw) { tripWeek = addDays(tripWeek, Number(tw.dataset.tripweek)); render(); return; }
+  const tr = e.target.closest('tr[data-trip]');
+  if (tr) { tripSel = tr.dataset.trip; render(); $('#tripForm')?.scrollIntoView({ block: 'start' }); return; }
+  if (e.target.closest('[data-tripdel]')) {
+    if (trips.find(x => x.date === tripSel) && confirm('Да изтрия ли записа за деня?')) store.remove('trips', tripSel);
+    return;
+  }
   const nav = e.target.closest('[data-nav]');
   if (nav) { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + Number(nav.dataset.nav), 1); render(); return; }
   const day = e.target.closest('[data-day]');
@@ -653,6 +710,16 @@ $('#main').addEventListener('click', e => {
 });
 
 $('#main').addEventListener('submit', e => {
+  if (e.target.id === 'tripForm') {
+    e.preventDefault();
+    const d = $('#tDate').value; if (!d) return;
+    const n = x => (x === '' ? null : Number(x));
+    const ex = trips.find(t => t.date === d) || {};
+    document.activeElement?.blur();
+    store.save('trips', { id: d, date: d, serves: ex.serves || 'ТО', route: $('#tRoute').value.trim(), km_start: n($('#tStart').value), km_end: n($('#tEnd').value), driver: ex.driver || 'Николай Коколичев', updatedAt: new Date().toISOString() });
+    tripSel = d; tripWeek = mondayOf(d); toast('Пътният лист е запазен');
+    return;
+  }
   if (e.target.id !== 'habitForm') return;
   e.preventDefault();
   const name = $('#habitName').value.trim();
@@ -662,6 +729,7 @@ $('#main').addEventListener('submit', e => {
   $('#habitName').value = '';
 });
 $('#main').addEventListener('change', e => {
+  if (e.target.id === 'tDate' && e.target.value) { tripSel = e.target.value; tripWeek = mondayOf(tripSel); document.activeElement?.blur(); render(); return; }
   const k = e.target.dataset?.set;
   if (!k) return;
   settings = normalizeSettings({ ...settings, [k]: e.target.value });

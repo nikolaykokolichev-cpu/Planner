@@ -2,7 +2,7 @@
 // Всичко е под users/{uid}/<колекция>, което вече е защитено от firestore.rules.
 import { firebaseConfig } from './firebase-config.js';
 
-export const COLLS = ['tasks', 'habits', 'reviews', 'focus', 'settings'];
+export const COLLS = ['tasks', 'habits', 'reviews', 'focus', 'settings', 'trips'];
 export const cfgOk = !!(firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('PASTE'));
 export const fbRefs = { fb: null, auth: null, db: null };
 
