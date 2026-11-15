@@ -300,3 +300,25 @@ table.trips td.route { white-space: normal; min-width: 170px; }
 table.trips tbody tr { cursor: pointer; }
 table.trips td.flag { color: var(--accent); font-weight: 600; }
 table.trips tfoot td { font-weight: 700; border-bottom: 0; }
+
+/* Червена тема: фон-картинка и плочки в червеникава гама (винаги тъмна) */
+:root {
+  color-scheme: dark;
+  --bg: #0b0607; --surface: rgba(34, 10, 13, .66); --surface2: rgba(78, 18, 22, .58);
+  --text: #f8ebe8; --muted: #c0a3a0; --line: rgba(255, 99, 86, .22);
+  --accent: #ff4a3a; --accent-text: #1a0505; --danger: #ff7d6e; --ok: #5fd68a;
+}
+html { background: #0b0607; }
+body { background: transparent; }
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(rgba(8, 3, 4, .42), rgba(8, 3, 4, .72)), url('bg.jpg') center / cover no-repeat;
+}
+.task, .kpi, .day, .tripform, .habit, .hchip, .focusbtn, .nudge, .toolbar input, table.trips {
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.tripform input, .tripform select { background: rgba(0, 0, 0, .35); }
+dialog { background: #1b0a0d; border: 1px solid var(--line); }
+dialog input, dialog select, dialog textarea, .sheet input { background: rgba(0, 0, 0, .35); }
+.login { background: rgba(11, 6, 7, .9); }
+.day.sel { background: var(--accent); }

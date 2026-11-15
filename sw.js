@@ -1,7 +1,7 @@
-const VERSION = 'planner-v6';
+const VERSION = 'planner-v7';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './logic.js', './store.js', './firebase-config.js',
-  './manifest.json', './icons/icon-192.png', './icons/icon-512.png'
+  './manifest.json', './bg.jpg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
 self.addEventListener('install', e => {
