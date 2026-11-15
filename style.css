@@ -342,3 +342,14 @@ dialog input, dialog select, dialog textarea, .sheet input { background: rgba(0,
   .day { min-height: 112px; }
   .day .ct { font-size: 12px; }
 }
+
+/* Ярки неонови червени рамки и по-тъмни плочки за контраст с фона */
+:root { --moon: #ff3b30; --surface: rgba(20, 5, 7, .84); --surface2: rgba(70, 14, 18, .72); }
+.task, .kpi, .day, .tripform, .habit, .hchip, .focusbtn, .nudge, .toolbar input, table.trips {
+  border: 1.5px solid #ff3b30;
+  box-shadow: 0 0 12px rgba(255, 59, 48, .5), inset 0 0 8px rgba(255, 59, 48, .12);
+}
+.day.out { border-color: rgba(255, 59, 48, .45); box-shadow: none; }
+.day.today { border-color: #ff7a6a; box-shadow: 0 0 18px rgba(255, 90, 72, .8); }
+.chip { border: 1px solid rgba(255, 59, 48, .6); }
+dialog { border: 1.5px solid #ff3b30; box-shadow: 0 0 24px rgba(255, 59, 48, .45); }
