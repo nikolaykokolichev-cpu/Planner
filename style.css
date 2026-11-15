@@ -322,3 +322,13 @@ dialog { background: #1b0a0d; border: 1px solid var(--line); }
 dialog input, dialog select, dialog textarea, .sheet input { background: rgba(0, 0, 0, .35); }
 .login { background: rgba(11, 6, 7, .9); }
 .day.sel { background: var(--accent); }
+
+/* По-силна червена рамка на плочките (цвят като луната във фона) */
+:root { --moon: #e5483a; }
+.task, .kpi, .day, .tripform, .habit, .hchip, .focusbtn, .nudge, .toolbar input {
+  border: 1px solid color-mix(in srgb, var(--moon) 85%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--moon) 22%, transparent), inset 0 0 0 1px rgba(255, 120, 100, .06);
+}
+.day.out { box-shadow: none; border-color: color-mix(in srgb, var(--moon) 40%, transparent); }
+.day.today { border-color: #ff6a58; box-shadow: 0 0 14px color-mix(in srgb, #ff5a48 45%, transparent); }
+.kpi { width: calc(100% - 40px); max-width: 720px; border-radius: var(--radius); padding: 10px 14px 10px; margin-top: 4px; }
