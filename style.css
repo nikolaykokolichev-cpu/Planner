@@ -332,3 +332,13 @@ dialog input, dialog select, dialog textarea, .sheet input { background: rgba(0,
 .day.out { box-shadow: none; border-color: color-mix(in srgb, var(--moon) 40%, transparent); }
 .day.today { border-color: #ff6a58; box-shadow: 0 0 14px color-mix(in srgb, #ff5a48 45%, transparent); }
 .kpi { width: calc(100% - 40px); max-width: 720px; border-radius: var(--radius); padding: 10px 14px 10px; margin-top: 4px; }
+
+/* Календар: колоните са равни и не се разпъват от дълги заглавия; на компютър е по-широк и центриран */
+.grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.day { min-width: 0; overflow: hidden; }
+@media (min-width: 900px) {
+  .top, .toolbar, main { max-width: min(1240px, 96vw); }
+  .kpi { max-width: min(1200px, calc(96vw - 40px)); }
+  .day { min-height: 112px; }
+  .day .ct { font-size: 12px; }
+}
